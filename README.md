@@ -4,11 +4,11 @@
 
 This is a PyTorch implementation of [Less is More: Surgical Phase Recognition from Timestamp Supervision].
 
-In this papper, we introduce a new setting, i.e., Timestamp supervision, for surgical phase recognition
+In this paper, we introduce a new setting, i.e., Timestamp supervision, for surgical phase recognition
 
 Framework visualization
 
-![framework visualization](resources/our_method.pdf)
+![framework visualization](resources/our_method.svg)
 
 ## Preparation
 
@@ -114,22 +114,4 @@ We invite two surgeons to conduct full and timestamp annotations respectively. T
 
 ```
 
-## Citation
 
-If this repository is useful for your research, please cite:
-
-```
-
-@@article{ding2022less,
-
-  title={Free Lunch for Surgical Video Understanding by Distilling Self-Supervisions},
-
-  author={Ding, Xinpeng and Liu, Ziwei and Li, Xiaomeng},
-
-  journal={arXiv preprint arXiv:2205.09292},
-
-  year={2022}
-
-}
-
-```
