@@ -71,34 +71,22 @@ We invite two surgeons to conduct full and timestamp annotations respectively. T
 
    ```
 
-   matplotlib==3.4.3
+    matplotlib==3.5.1
+    numpy==1.21.2
+    Pillow==9.3.0
+    scikit_learn==1.1.3
+    scipy==1.7.3
+    tabulate==0.9.0
+    torch==1.11.0
+    torchvision==0.12.0
+    tqdm==4.62.3
 
-   numpy==1.20.3
-
-   opencv_python==4.5.3.56
-
-   Pillow==9.2.0
-
-   registry==0.4.2
-
-   scikit_learn==1.1.2
-
-   scipy==1.7.1
-
-   termcolor==1.1.0
-
-   torch==1.9.0
-
-   torchvision==0.10.0
-
-   tqdm==4.61.2
 
    ```
 2. Conduct loop training:
 
 
    ```
-
    sh circle.sh
 
    ```

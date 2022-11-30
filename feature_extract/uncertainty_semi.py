@@ -12,8 +12,8 @@ import random
 from tqdm import tqdm
 
 from data_util import base_transform, phase2label_dicts, PureTimestampDataset, PseudoLabelDataset, FullDataset, BatchGenerator
-from model import inception_v3, SemiNetwork
-from simclr import ContrastiveLearningViewGenerator, SimCLR
+from model import inception_v3
+
 from sklearn import metrics
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -106,127 +106,6 @@ def train_only(model, save_dir, train_loader, test_loader):
 
     f.close()
 
-
-def train_semi(save_dir, batch_gen, test_loader, num_iters, forward_times):
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    f = open(os.path.join(save_dir, 'log.txt'), 'w')
-    for it in range(1, num_iters+1):
-        model = SemiNetwork('inception_v3', len(phase2label_dicts[args.dataset]))
-        model.to(device)
-        criterion = nn.CrossEntropyLoss()
-        learning_rate = 1e-4
-        optimizer_l = torch.optim.Adam(model.branch1.parameters(), learning_rate, weight_decay=1e-5)
-        optimizer_r = torch.optim.Adam(model.branch2.parameters(), learning_rate, weight_decay=1e-5)
-        scheduler_l = torch.optim.lr_scheduler.StepLR(optimizer_l, step_size=2, gamma=0.5)
-        scheduler_r = torch.optim.lr_scheduler.StepLR(optimizer_r, step_size=2, gamma=0.5)
-        print('Iteration: {}. Num of pseudo labels: {}, rate: {:.4f}'.format(it, len(batch_gen.imgs), len(batch_gen.imgs) / len(batch_gen.total_imgs)))
-        print('Num of unlabeled data: {}'.format(len(batch_gen.unsup_imgs)))
-        for epoch in range(1, epochs + 1):
-            model.train()
-
-            correct = 0
-            total = 0
-            loss_item = 0
-
-            while batch_gen.has_next() and batch_gen.has_next_unsup():
-                sup_imgs, sup_labels = batch_gen.next_batch()
-                unsup_imgs = batch_gen.next_batch_unsup()
-                sup_imgs, sup_labels, unsup_imgs = sup_imgs.to(device), sup_labels.to(device), unsup_imgs.to(device)
-
-                _, pred_sup_l = model(sup_imgs, step=1)
-                _, pred_sup_r = model(sup_imgs, step=2)
-                _, pred_unsup_l = model(unsup_imgs, step=1)
-                _, pred_unsup_r = model(unsup_imgs, step=2)
-
-                pred_l = torch.cat([pred_sup_l, pred_unsup_l], dim=0)
-                pred_r = torch.cat([pred_sup_r, pred_unsup_r], dim=0)
-                _, max_l = torch.max(pred_l, dim=1)
-                _, max_r = torch.max(pred_r, dim=1)
-                max_l = max_l.long()
-                max_r = max_r.long()
-
-                cps_loss = criterion(pred_l, max_r) + criterion(pred_r, max_l)
-                sup_loss = criterion(pred_sup_l, sup_labels) + criterion(pred_sup_r, sup_labels)
-                if it > 3 and epoch > 2:
-                    loss = cps_loss + sup_loss
-                else:
-                    loss = sup_loss
-
-                loss_item += loss.item()
-                _, prediction = torch.max(pred_sup_l.data, 1)
-                correct += ((prediction == sup_labels).sum()).item()
-                total += len(prediction)
-
-                optimizer_l.zero_grad()
-                optimizer_r.zero_grad()
-                loss.backward()
-                optimizer_l.step()
-                optimizer_r.step()
-            batch_gen.reset()
-            batch_gen.reset_unsup()
-
-            scheduler_l.step()
-            scheduler_r.step()
-
-            print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct/total, loss_item/total))
-            f.write('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct/total, loss_item/total) + '\n')
-            f.flush()
-            torch.save(model.state_dict(), save_dir + "/{}_{}.model".format(it, epoch))
-
-        test_acc, test_loss = test(model, test_loader)
-        f.write('Test Acc: {:.4f}, Loss: {:.4f}'.format(test_acc, test_loss) + '\n')
-        f.flush()
-
-        start = time.time()
-        model.eval()
-        enable_dropout(model)
-        all_predictions = []
-        all_scores = []
-        with torch.no_grad():
-            '''
-            while batch_gen.has_next_total():
-                data = batch_gen.next_batch_total()
-                data = data.to(device)
-                mc_probs = []
-                for _ in range(forward_times):
-                    _, logits = model(data)
-                    probs = F.softmax(logits, dim=1)
-                    mc_probs.append(probs)
-                mc_probs = torch.stack(mc_probs, dim=0)
-                std = torch.std(mc_probs, dim=0)
-                mc_probs = torch.mean(mc_probs, dim=0)
-                predictions = torch.max(mc_probs, dim=1)[1]
-                scores = std.gather(1, predictions.unsqueeze(-1))
-                all_predictions.extend(predictions.detach().cpu().numpy().tolist())
-                all_scores.extend(scores.view(-1).detach().cpu().numpy().tolist())
-            batch_gen.reset_total()
-            '''
-            while batch_gen.has_next_total():
-                data = batch_gen.next_batch_total()
-                data = data.to(device)
-                _, logits = model(data)
-                probs = F.softmax(logits, dim=1)
-                predictions = torch.max(probs, dim=1)[1]
-                all_predictions.extend(predictions.detach().cpu().numpy().tolist())
-                all_scores.extend(probs.view(-1).detach().cpu().numpy().tolist())
-            batch_gen.reset_total()
-        video_lengths = batch_gen.video_lengths
-        assert len(all_predictions) == sum(video_lengths)
-        pre = 0
-        new_all_predictions = []
-        new_all_scores = []
-        for length in video_lengths:
-            new_all_predictions.append(all_predictions[pre: pre+length])
-            new_all_scores.append(all_scores[pre: pre+length])
-            pre += length
-        thres = 0.95
-        batch_gen.update_dataset(new_all_predictions, new_all_scores, thres=thres)
-        batch_gen.reset()
-        print('Pseudo labeling time: {}s'.format(time.time() - start))
-
-    print('Training done!')
-    f.close()
 
 
 def train_uncertainty(save_dir, batch_gen, test_loader, num_iters, forward_times):
@@ -559,42 +438,8 @@ if __name__ == '__main__':
 
         train_only( inception, 'models/{}/only'.format(args.dataset), timestamp_train_dataloader, full_test_dataloader)
 
-    if args.action == 'train_simclr':
-        model = inception_v3(pretrained=True, aux_logits=False).to(device)
-        dataset = FullDataset(args.dataset, frames_path, annotations_path, train=True, transform=ContrastiveLearningViewGenerator(base_transform(args.dataset)))
-        train_loader = DataLoader(dataset, batch_size=8, shuffle=True, pin_memory=True, drop_last=True)
-        args.batch_size = 8
-        args.n_views = 2
-        args.device = device
-        args.epochs = epochs
-        args.temperature = 0.07
-        args.fp16_precision = True
-        optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-        simclr = SimCLR(model=model, optimizer=optimizer, scheduler=scheduler, args=args)
-        simclr.train('models/{}/simclr'.format(args.dataset), train_loader)
-
-    if args.action == 'train_semi':
-        batch_gen = BatchGenerator(args.dataset, frames_path, annotations_path, timestamp_path, batch_size=8, sample_rate=5)
-        full_testdataset = FullDataset(args.dataset, frames_path, annotations_path, train=False, sample_rate=5)
-        full_test_dataloader = DataLoader(full_testdataset, batch_size=8, shuffle=True, drop_last=False)
-
-        train_semi('models/{}/semi'.format(args.dataset), batch_gen, full_test_dataloader, num_iters=5, forward_times=5)
-
-    if args.action == 'train_uncertainty':
-        batch_gen = BatchGenerator(args.dataset, frames_path, annotations_path, timestamp_path, batch_size=8)
-        full_testdataset = FullDataset(args.dataset, frames_path, annotations_path, train=False, sample_rate=5)
-        full_test_dataloader = DataLoader(full_testdataset, batch_size=64, shuffle=True, drop_last=False)
-
-        train_uncertainty('models/{}/uncertainty'.format(args.dataset), batch_gen, full_test_dataloader, num_iters=15, forward_times=5)
-
-    if args.action == 'train_temporal':
-        batch_gen = BatchGenerator(args.dataset, frames_path, annotations_path, timestamp_path, batch_size=8)
-        full_testdataset = FullDataset(args.dataset, frames_path, annotations_path, train=False, sample_rate=5)
-        full_test_dataloader = DataLoader(full_testdataset, batch_size=64, shuffle=True, drop_last=False)
-
-        train_temporal('models/{}/temporal'.format(args.dataset), batch_gen, full_test_dataloader, num_iters=15, forward_times=5)
-
+   
+   
 
     if args.action == 'extract_only': # extract inception feature
         inception = inception_v3(pretrained=True, aux_logits=False)
@@ -615,59 +460,8 @@ if __name__ == '__main__':
             extract(inception, full_test_dataloader, '{}/test_dataset/frame_feature@only/'.format(args.dataset))
             imgf2videof('{}/test_dataset/frame_feature@only/'.format(args.dataset), '{}/test_dataset/video_feature@only/'.format(args.dataset))
 
-    if args.action == 'extract_simclr':
-        inception = inception_v3(pretrained=True, aux_logits=False)
-        model_path = 'models/{}/simclr/1.model'.format(args.dataset)
-        inception.load_state_dict(torch.load(model_path))
-
-        if args.target == 'train_set':
-            full_traindataset = FullDataset(args.dataset, frames_path, annotations_path, train=True)
-            full_train_dataloader = DataLoader(full_traindataset, batch_size=1, shuffle=False, drop_last=False)
-            extract(inception, full_train_dataloader, '{}/train_dataset/frame_feature@simclr/'.format(args.dataset))
-            imgf2videof('{}/train_dataset/frame_feature@simclr/'.format(args.dataset), '{}/train_dataset/video_feature@simclr/'.format(args.dataset))
-        else:
-            full_testdataset = FullDataset(args.dataset, frames_path, annotations_path, train=False)
-            full_test_dataloader = DataLoader(full_testdataset, batch_size=1, shuffle=False, drop_last=False)
-
-            extract(inception, full_test_dataloader, '{}/test_dataset/frame_feature@simclr/'.format(args.dataset))
-            imgf2videof('{}/test_dataset/frame_feature@simclr/'.format(args.dataset), '{}/test_dataset/video_feature@simclr/'.format(args.dataset))
-
     
-    if args.action == 'extract_semi': # extract inception feature
-        net = SemiNetwork('inception_v3', len(phase2label_dicts[args.dataset]))
-        model_path = 'models/{}/semi/5.model'.format(args.dataset)
-        net.load_state_dict(torch.load(model_path))
-
-        if args.target == 'train_set':
-            full_traindataset = FullDataset(args.dataset, frames_path, annotations_path, train=True)
-            full_train_dataloader = DataLoader(full_traindataset, batch_size=64, shuffle=False, drop_last=False)
-            extract(net, full_train_dataloader, '{}/train_dataset/frame_feature@semi/'.format(args.dataset))
-            imgf2videof('{}/train_dataset/frame_feature@semi/'.format(args.dataset), '{}/train_dataset/video_feature@semi/'.format(args.dataset))
-        else:
-            full_testdataset = FullDataset(args.dataset, frames_path, annotations_path, train=False)
-            full_test_dataloader = DataLoader(full_testdataset, batch_size=64, shuffle=False, drop_last=False)
-
-            extract(net, full_test_dataloader, '{}/test_dataset/frame_feature@semi/'.format(args.dataset))
-            imgf2videof('{}/test_dataset/frame_feature@semi/'.format(args.dataset), '{}/test_dataset/video_feature@semi/'.format(args.dataset))
-
-    if args.action == 'extract_uncertainty': # extract inception feature
-        inception = inception_v3(pretrained=True, aux_logits=False)
-        fc_features = inception.fc.in_features
-        inception.fc = nn.Linear(fc_features, len(phase2label_dicts[args.dataset]))
-        model_path = 'models/{}/uncertainty/10_5.model'.format(args.dataset)
-        inception.load_state_dict(torch.load(model_path))
-
-        if args.target == 'train_set':
-            full_traindataset = FullDataset(args.dataset, frames_path, annotations_path, train=True)
-            full_train_dataloader = DataLoader(full_traindataset, batch_size=1, shuffle=False, drop_last=False)
-            extract(inception, full_train_dataloader, '{}/train_dataset/frame_feature@uncertainty/'.format(args.dataset))
-            imgf2videof('{}/train_dataset/frame_feature@uncertainty/'.format(args.dataset), '{}/train_dataset/video_feature@uncertainty/'.format(args.dataset))
-        else:
-            full_testdataset = FullDataset(args.dataset, frames_path, annotations_path, train=False)
-            full_test_dataloader = DataLoader(full_testdataset, batch_size=1, shuffle=False, drop_last=False)
-
-            extract(inception, full_test_dataloader, '{}/test_dataset/frame_feature@uncertainty/'.format(args.dataset))
-            imgf2videof('{}/test_dataset/frame_feature@uncertainty/'.format(args.dataset), '{}/test_dataset/video_feature@uncertainty/'.format(args.dataset))
+    
     
     if args.action == 'test':
         inception = inception_v3(pretrained=True, aux_logits=False)

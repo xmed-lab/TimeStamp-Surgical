@@ -1,7 +1,6 @@
 import os
 import random
 from tabulate import tabulate
-from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

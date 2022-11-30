@@ -7,57 +7,15 @@ import torchvision
 import copy
 import numpy as np
 from torch.hub import load_state_dict_from_url
-from wide_resnet import WideResNet
-from resnet import resnet18, resnet34
+
 
 
 def get_single_model():
     pass
 
 
-def get_semi_modle():
-    pass
 
 
-class SemiNetwork(nn.Module):
-    def __init__(self, backbone, num_classes):
-        super(SemiNetwork, self).__init__()
-        if backbone == 'inception_v3':
-            self.branch1 = inception_v3(pretrained=True, aux_logits=False)
-            self.branch2 = inception_v3(pretrained=True, aux_logits=False)
-            fc_features = self.branch1.fc.in_features
-            self.branch1.fc = nn.Linear(fc_features, num_classes)
-            self.branch2.fc = nn.Linear(fc_features, num_classes)
-
-            nn.init.kaiming_normal_(self.branch1.fc.weight, mode='fan_in', nonlinearity='relu')
-            nn.init.kaiming_normal_(self.branch2.fc.weight, mode='fan_in', nonlinearity='relu')
-        elif backbone == 'wide_resnet-28':
-            self.branch1 = WideResNet(in_channels=3, out_channels=num_classes)
-            self.branch2 = WideResNet(in_channels=3, out_channels=num_classes)
-        elif backbone == 'resnet18':
-            self.branch1 = resnet18(pretrained=True)
-            self.branch2 = resnet18(pretrained=True)
-            fc_features = self.branch1.fc.in_features
-            self.branch1.fc = nn.Linear(fc_features, num_classes)
-            self.branch2.fc = nn.Linear(fc_features, num_classes)
-        elif backbone == 'resnet34':
-            self.branch1 = resnet34(pretrained=True)
-            self.branch2 = resnet34(pretrained=True)
-            fc_features = self.branch1.fc.in_features
-            self.branch1.fc = nn.Linear(fc_features, num_classes)
-            self.branch2.fc = nn.Linear(fc_features, num_classes)
-
-            nn.init.kaiming_normal_(self.branch1.fc.weight, mode='fan_in', nonlinearity='relu')
-            nn.init.kaiming_normal_(self.branch2.fc.weight, mode='fan_in', nonlinearity='relu')
-
-    def forward(self, data, step=1):
-        if not self.training:
-            return self.branch1(data)
-
-        if step == 1:
-            return self.branch1(data)
-        elif step == 2:
-            return self.branch2(data)
 
 # pytorch-tutorial 
 __all__ = ['Inception3', 'inception_v3']
