@@ -102,4 +102,15 @@ We invite two surgeons to conduct full and timestamp annotations respectively. T
 
 ```
 
+***Citation***
+If this code is useful for your research, please consider citing:
 
+```shell
+@article{ding2022less,
+  title={Less is More: Surgical Phase Recognition from Timestamp Supervision},
+  author={Ding, Xinpeng and Yan, Xinjian and Wang, Zixun and Zhao, Wei and Zhuang, Jian and Xu, Xiaowei and Li, Xiaomeng},
+  journal={IEEE TMI},
+  year={2022}
+}
+
+```
